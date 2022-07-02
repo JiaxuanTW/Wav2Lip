@@ -1,17 +1,20 @@
-from os import listdir, path
-import numpy as np
-import scipy, cv2, os, sys, argparse, audio
-import json, subprocess, random, string
-from tqdm import tqdm
-from glob import glob
-import torch, face_detection
-from models import Wav2Lip
+import os
 import platform
+import subprocess
+
+import cv2
+import numpy as np
+import torch
+from tqdm import tqdm
+
+import audio
+import face_detection
+from models import Wav2Lip
 
 img_size = 96
 mel_step_size = 16
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print('Using {} for inference.'.format(device))
+print('Using {} for inference'.format(device))
 
 
 def get_smoothened_boxes(boxes, T):
@@ -77,14 +80,16 @@ def datagen(frames, mels, box, static, wav2lip_batch_size, face_det_batch_size, 
     if box[0] == -1:
         if not static:
             # BGR2RGB for CNN face detection
-            face_det_results = face_detect(frames, face_det_batch_size, pads, nosmooth)
+            face_det_results = face_detect(
+                frames, face_det_batch_size, pads, nosmooth)
         else:
             face_det_results = face_detect(
                 [frames[0]], face_det_batch_size, pads, nosmooth)
     else:
         print('Using the specified bounding box instead of face detection...')
         y1, y2, x1, x2 = box
-        face_det_results = [[f[y1: y2, x1:x2], (y1, y2, x1, x2)] for f in frames]
+        face_det_results = [
+            [f[y1: y2, x1:x2], (y1, y2, x1, x2)] for f in frames]
 
     for i, m in enumerate(mels):
         idx = 0 if static else i % len(frames)
@@ -147,7 +152,8 @@ def load_model(path):
     return model.eval()
 
 
-def main(checkpoint_path, input_face, input_audio,
+def synthesize_face(input_face, input_audio,
+         checkpoint_path='checkpoints/wav2lip.pth',
          outfile='results/result_voice.mp4',
          static=False,
          fps=25,
@@ -159,16 +165,16 @@ def main(checkpoint_path, input_face, input_audio,
          box=[-1, -1, -1, -1],
          rotate=False,
          nosmooth=False):
+
     if os.path.isfile(input_face) and input_face.split('.')[1] in ['jpg', 'png', 'jpeg']:
         static = True
 
     if not os.path.isfile(input_face):
-        raise ValueError('--face argument must be a valid path to video/image file')
-
+        raise ValueError(
+            '--face argument must be a valid path to video/image file')
     elif input_face.split('.')[1] in ['jpg', 'png', 'jpeg']:
         full_frames = [cv2.imread(input_face)]
         fps = fps
-
     else:
         video_stream = cv2.VideoCapture(input_face)
         fps = video_stream.get(cv2.CAP_PROP_FPS)
@@ -182,7 +188,8 @@ def main(checkpoint_path, input_face, input_audio,
                 video_stream.release()
                 break
             if resize_factor > 1:
-                frame = cv2.resize(frame, (frame.shape[1] // resize_factor, frame.shape[0] // resize_factor))
+                frame = cv2.resize(
+                    frame, (frame.shape[1] // resize_factor, frame.shape[0] // resize_factor))
 
             if rotate:
                 frame = cv2.rotate(frame, cv2.cv2.ROTATE_90_CLOCKWISE)
@@ -201,7 +208,8 @@ def main(checkpoint_path, input_face, input_audio,
 
     if not input_audio.endswith('.wav'):
         print('Extracting raw audio...')
-        command = 'ffmpeg -y -i {} -strict -2 {}'.format(input_audio, 'temp/temp.wav')
+        command = 'ffmpeg -y -i {} -strict -2 {}'.format(
+            input_audio, 'temp/temp.wav')
 
         subprocess.call(command, shell=True)
         input_audio = 'temp/temp.wav'
@@ -211,7 +219,8 @@ def main(checkpoint_path, input_face, input_audio,
     print(mel.shape)
 
     if np.isnan(mel.reshape(-1)).sum() > 0:
-        raise ValueError('Mel contains nan! Using a TTS voice? Add a small epsilon noise to the wav file and try again')
+        raise ValueError(
+            'Mel contains nan! Using a TTS voice? Add a small epsilon noise to the wav file and try again')
 
     mel_chunks = []
     mel_idx_multiplier = 80. / fps
@@ -229,21 +238,23 @@ def main(checkpoint_path, input_face, input_audio,
     full_frames = full_frames[:len(mel_chunks)]
 
     batch_size = wav2lip_batch_size
-    gen = datagen(full_frames.copy(), mel_chunks, box, static, wav2lip_batch_size, face_det_batch_size, pads, nosmooth)
+    gen = datagen(full_frames.copy(), mel_chunks, box, static,
+                  wav2lip_batch_size, face_det_batch_size, pads, nosmooth)
 
-    for i, (img_batch, mel_batch, frames, coords) in enumerate(tqdm(gen,
-                                                                    total=int(
-                                                                        np.ceil(float(len(mel_chunks)) / batch_size)))):
+    for i, (img_batch, mel_batch, frames, coords) in enumerate(
+            tqdm(gen, total=int(np.ceil(float(len(mel_chunks)) / batch_size)))):
         if i == 0:
             model = load_model(checkpoint_path)
             print("Model loaded")
-
+            
             frame_h, frame_w = full_frames[0].shape[:-1]
             out = cv2.VideoWriter('temp/result.avi',
                                   cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
 
-        img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
-        mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
+        img_batch = torch.FloatTensor(
+            np.transpose(img_batch, (0, 3, 1, 2))).to(device)
+        mel_batch = torch.FloatTensor(
+            np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
 
         with torch.no_grad():
             pred = model(mel_batch, img_batch)
@@ -253,11 +264,11 @@ def main(checkpoint_path, input_face, input_audio,
         for p, f, c in zip(pred, frames, coords):
             y1, y2, x1, x2 = c
             p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
-
             f[y1:y2, x1:x2] = p
             out.write(f)
 
     out.release()
 
-    command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(input_audio, 'temp/result.avi', outfile)
+    command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(
+        input_audio, 'temp/result.avi', outfile)
     subprocess.call(command, shell=platform.system() != 'Windows')
