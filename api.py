@@ -7,9 +7,9 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-import audio
-import face_detection
-from models import Wav2Lip
+import wav2lip.audio as audio
+import wav2lip.face_detection as face_detection
+from wav2lip.models import Wav2Lip
 
 img_size = 96
 mel_step_size = 16
@@ -53,7 +53,7 @@ def face_detect(images, face_det_batch_size, pads, nosmooth):
     for rect, image in zip(predictions, images):
         if rect is None:
             # check this frame where the face was not detected.
-            cv2.imwrite('temp/faulty_frame.jpg', image)
+            cv2.imwrite('wav2lip/temp/faulty_frame.jpg', image)
             raise ValueError(
                 'Face not detected! Ensure the video contains a face in all the frames.')
 
@@ -153,8 +153,8 @@ def load_model(path):
 
 
 def synthesize_face(input_face, input_audio,
-         checkpoint_path='checkpoints/wav2lip.pth',
-         outfile='results/result_voice.mp4',
+         checkpoint_path= os.path.join(os.getcwd(), 'wav2lip/checkpoints/wav2lip.pth'),
+         outfile='wav2lip/results/result_voice.mp4',
          static=False,
          fps=25,
          pads=[0, 10, 0, 0],
@@ -209,10 +209,10 @@ def synthesize_face(input_face, input_audio,
     if not input_audio.endswith('.wav'):
         print('Extracting raw audio...')
         command = 'ffmpeg -y -i {} -strict -2 {}'.format(
-            input_audio, 'temp/temp.wav')
+            input_audio, 'wav2lip/temp/temp.wav')
 
         subprocess.call(command, shell=True)
-        input_audio = 'temp/temp.wav'
+        input_audio = 'wav2lip/temp/temp.wav'
 
     wav = audio.load_wav(input_audio, 16000)
     mel = audio.melspectrogram(wav)
@@ -248,7 +248,7 @@ def synthesize_face(input_face, input_audio,
             print("Model loaded")
             
             frame_h, frame_w = full_frames[0].shape[:-1]
-            out = cv2.VideoWriter('temp/result.avi',
+            out = cv2.VideoWriter('wav2lip/temp/result.avi',
                                   cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
 
         img_batch = torch.FloatTensor(
@@ -270,5 +270,5 @@ def synthesize_face(input_face, input_audio,
     out.release()
 
     command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(
-        input_audio, 'temp/result.avi', outfile)
+        input_audio, 'wav2lip/temp/result.avi', outfile)
     subprocess.call(command, shell=platform.system() != 'Windows')
