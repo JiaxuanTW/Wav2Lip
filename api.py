@@ -11,10 +11,10 @@ import audio
 import face_detection
 from models import Wav2Lip
 
-img_size = 96
-mel_step_size = 16
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print('Using {} for inference'.format(device))
+IMG_SIZE = 96
+MEL_STEP_SIZE = 16
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+print('Wav2Lip: Using {} for inference'.format(DEVICE))
 
 
 def get_smoothened_boxes(boxes, T):
@@ -29,10 +29,8 @@ def get_smoothened_boxes(boxes, T):
 
 def face_detect(images, face_det_batch_size, pads, nosmooth):
     detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D,
-                                            flip_input=False, device=device)
-
+                                            flip_input=False, device=DEVICE)
     batch_size = face_det_batch_size
-
     while 1:
         predictions = []
         try:
@@ -96,7 +94,7 @@ def datagen(frames, mels, box, static, wav2lip_batch_size, face_det_batch_size, 
         frame_to_save = frames[idx].copy()
         face, coords = face_det_results[idx].copy()
 
-        face = cv2.resize(face, (img_size, img_size))
+        face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
 
         img_batch.append(face)
         mel_batch.append(m)
@@ -107,7 +105,7 @@ def datagen(frames, mels, box, static, wav2lip_batch_size, face_det_batch_size, 
             img_batch, mel_batch = np.asarray(img_batch), np.asarray(mel_batch)
 
             img_masked = img_batch.copy()
-            img_masked[:, img_size // 2:] = 0
+            img_masked[:, IMG_SIZE // 2:] = 0
 
             img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.
             mel_batch = np.reshape(
@@ -120,7 +118,7 @@ def datagen(frames, mels, box, static, wav2lip_batch_size, face_det_batch_size, 
         img_batch, mel_batch = np.asarray(img_batch), np.asarray(mel_batch)
 
         img_masked = img_batch.copy()
-        img_masked[:, img_size // 2:] = 0
+        img_masked[:, IMG_SIZE // 2:] = 0
 
         img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.
         mel_batch = np.reshape(
@@ -130,11 +128,11 @@ def datagen(frames, mels, box, static, wav2lip_batch_size, face_det_batch_size, 
 
 
 def _load(checkpoint_path):
-    if device == 'cuda':
+    if DEVICE == 'cuda':
         checkpoint = torch.load(checkpoint_path)
     else:
-        checkpoint = torch.load(checkpoint_path,
-                                map_location=lambda storage, loc: storage)
+        checkpoint = torch.load(
+            checkpoint_path, map_location=lambda storage, loc: storage)
     return checkpoint
 
 
@@ -147,24 +145,23 @@ def load_model(path):
     for k, v in s.items():
         new_s[k.replace('module.', '')] = v
     model.load_state_dict(new_s)
-
-    model = model.to(device)
+    model = model.to(DEVICE)
     return model.eval()
 
 
 def synthesize_face(input_face, input_audio,
-         checkpoint_path='checkpoints/wav2lip.pth',
-         outfile='results/result_voice.mp4',
-         static=False,
-         fps=25,
-         pads=[0, 10, 0, 0],
-         face_det_batch_size=16,
-         wav2lip_batch_size=128,
-         resize_factor=1,
-         crop=[0, -1, 0, -1],
-         box=[-1, -1, -1, -1],
-         rotate=False,
-         nosmooth=False):
+                    checkpoint_path='checkpoints/wav2lip.pth',
+                    outfile='results/result_voice.mp4',
+                    static=False,
+                    fps=25,
+                    pads=[0, 10, 0, 0],
+                    face_det_batch_size=16,
+                    wav2lip_batch_size=128,
+                    resize_factor=1,
+                    crop=[0, -1, 0, -1],
+                    box=[-1, -1, -1, -1],
+                    rotate=False,
+                    nosmooth=False):
 
     if os.path.isfile(input_face) and input_face.split('.')[1] in ['jpg', 'png', 'jpeg']:
         static = True
@@ -190,18 +187,14 @@ def synthesize_face(input_face, input_audio,
             if resize_factor > 1:
                 frame = cv2.resize(
                     frame, (frame.shape[1] // resize_factor, frame.shape[0] // resize_factor))
-
             if rotate:
                 frame = cv2.rotate(frame, cv2.cv2.ROTATE_90_CLOCKWISE)
-
             y1, y2, x1, x2 = crop
             if x2 == -1:
                 x2 = frame.shape[1]
             if y2 == -1:
                 y2 = frame.shape[0]
-
             frame = frame[y1:y2, x1:x2]
-
             full_frames.append(frame)
 
     print("Number of frames available for inference: " + str(len(full_frames)))
@@ -216,7 +209,7 @@ def synthesize_face(input_face, input_audio,
 
     wav = audio.load_wav(input_audio, 16000)
     mel = audio.melspectrogram(wav)
-    print(mel.shape)
+    print('Shape of MEL Spectrogram', mel.shape)
 
     if np.isnan(mel.reshape(-1)).sum() > 0:
         raise ValueError(
@@ -227,10 +220,10 @@ def synthesize_face(input_face, input_audio,
     i = 0
     while 1:
         start_idx = int(i * mel_idx_multiplier)
-        if start_idx + mel_step_size > len(mel[0]):
-            mel_chunks.append(mel[:, len(mel[0]) - mel_step_size:])
+        if start_idx + MEL_STEP_SIZE > len(mel[0]):
+            mel_chunks.append(mel[:, len(mel[0]) - MEL_STEP_SIZE:])
             break
-        mel_chunks.append(mel[:, start_idx: start_idx + mel_step_size])
+        mel_chunks.append(mel[:, start_idx: start_idx + MEL_STEP_SIZE])
         i += 1
 
     print("Length of mel chunks: {}".format(len(mel_chunks)))
@@ -246,15 +239,15 @@ def synthesize_face(input_face, input_audio,
         if i == 0:
             model = load_model(checkpoint_path)
             print("Model loaded")
-            
+
             frame_h, frame_w = full_frames[0].shape[:-1]
             out = cv2.VideoWriter('temp/result.avi',
                                   cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
 
         img_batch = torch.FloatTensor(
-            np.transpose(img_batch, (0, 3, 1, 2))).to(device)
+            np.transpose(img_batch, (0, 3, 1, 2))).to(DEVICE)
         mel_batch = torch.FloatTensor(
-            np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
+            np.transpose(mel_batch, (0, 3, 1, 2))).to(DEVICE)
 
         with torch.no_grad():
             pred = model(mel_batch, img_batch)
